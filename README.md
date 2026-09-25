@@ -1,104 +1,139 @@
-# SIM Swap sample backend application
+# SIM Swap defensive checker
 
-This sample app showcases how to use the Open Gateway SIM Swap API from a Python backend application. It uses the Telefónica's Open Gateway Sandbox as the testing environment exposing Open Gateway APIs. For additional information on the SIM Swap API, the Open Gateway initiative and Telefónica's resources for developers, please refer to the [parent repository](https://github.com/Telefonica/opengateway-samples-simswap).
+This repository is a defensive sample for checking whether a phone line had a recent SIM change through the Open Gateway SIM Swap API.
 
-## Overview
+It is based on the Telefónica Open Gateway sample and is intended for fraud detection, incident response, and testing with numbers you own or are authorized to verify.
 
-You will find three Python scripts to test the SIM Swap API consumption in the following ways:
-- A command line script taking a phone number as an argument and using the Sandbox's SDK to check for recent SIM card swaps *(a)*
-- A version of the same script performing HTTP requests instead of using an SDK *(b)*
-- A web server publishing a custom API for a [frontend application](https://github.com/Telefonica/opengateway-samples-simswap-frontend) to offer the SIM Swap functionality on a human interface *(c)*
+## What it does
 
-The following is a high level architecture diagram of the components involved in using Open Gateway APIs applied to this sample app. Note that Telefónica's Open Gateway Sandbox is used for this app as a testing environment, being the final scenario subscribing Open Gateway API products to an Open Gateway channel partner, also known as aggregators:
+The project provides:
 
-![High level architecture diagram](architecture.png)
+- a Python CLI that checks whether a SIM change happened inside a requested time window;
+- retrieval of the last reported SIM-change date;
+- optional JSON output for evidence collection or integration;
+- a small Flask API exposing the same defensive checks.
 
-*[CAMARA](https://camaraproject.org) is the Open Gateway APIs' standardization body*
+A positive result means the network reports a SIM change. It does **not** by itself prove fraud: legitimate SIM replacements, eSIM migrations, or carrier operations can also produce a SIM-change event.
 
-*Aggregator is an Open Gateway channel partner. This sample app uses the Telefónica's Open Gateway Sandbox as a sandbox aggregator, both its API gateway and its Python SDK*
+## Important limitation
 
-*The sample command line backend script is versioned both using the Sandbox SDK and performing HTTP requests to the Sandbox API gateway*
+The Telefónica Sandbox is a testing environment. Sandbox results are not forensic evidence for a real mobile line.
 
-*Any of the three options _(a)_, _(b)_, _(c)_ are alternatives and not dependent on each other. Try any of them interchangeably*
+Real carrier availability depends on the Open Gateway provider and country. For an incident involving an Argentine number, confirm whether the relevant Argentine operator exposes the SIM Swap API for that line. Carrier records remain the authoritative source for a suspected fraudulent replacement or port-out.
 
 ## Requirements
 
-To clone and run the sample app scripts:
-- [Git](https://git-scm.com/downloads)
-- [Python](https://www.python.org/downloads/)
+- Python 3.9+
+- Open Gateway / Telefónica Sandbox credentials
+- Git, if cloning the repository
 
-To be able to use the Telefónica Open Gateway Sandbox and its SDK:
-- Check how to know and join our programs to get credentials for your app [here](https://github.com/Telefonica/opengateway-samples-simswap#sample-app)
+Install dependencies:
 
-## Dependencies
-
-- Install the [Sandbox's Python SDK](https://pypi.org/project/opengateway-sandbox-sdk/)
-```Shell
-pip install opengateway-sandbox-sdk
-```
-
-- To run the web server version, install Flask
-```Shell
-pip install -U Flask
-pip install -U flask-cors
+```bash
+python -m pip install -r requirements.txt
 ```
 
 ## Configuration
 
-For the sake of simplicity, you will find the following values hardcoded in the scripts. Some of them need to be replaced with the actual values provided when registering your app in the Open Gateway Sandbox, or in your Open Gateway channel partner of choice:
+Credentials are no longer stored in the source code.
 
-- Your app credentials
-	- `APP_CLIENT_ID` and `APP_CLIENT_SECRET`, as obtained from registration
+Set them as environment variables:
 
-- Your channel partner API exposure platform _(if not using the Sandbox SDK)_
-	- `API_GATEWAY_URL`, Sandbox's API gateway URL is included
-
-- The Open Gateway API product to use _(if not using the Sandbox SDK)_
-	- `GRANT_TYPE`, leave it fixed for CIBA (check the [parent repository](https://github.com/Telefonica/opengateway-samples-simswap) for information on the authorization flows)
-	- `PURPOSE`, leave it fixed for a fraud prevention use case (the one available for the SIM Swap API as an Open Gateway product)
-
-- The IP port to run the web server _(if using the web server version)_
-	- `PORT`, default is 8000 but you can change it to any available port on your computer
-
-On a production environment, **be sure to store these values in a secure way**, such as environment variables or a configuration file.
-
-## Usage
-
-### From the command line
-
-Type the following command for any of the two scripts available (the one using the Sandbox SDK or the one performing HTTP requests) providing these arguments:
-- 1st argument (mandatory): the phone number to check for recent SIM card swaps (including country code with the + prefix)
-- 2nd argument (optional): the number of hours of the recent period that you want to check (default 2400 = 100 days)
-
-#### Using the Sandbox SDK
-
-```Shell
-cd command
-python simswap-sdk.py +34555555555
+```bash
+export OPEN_GATEWAY_CLIENT_ID="your-client-id"
+export OPEN_GATEWAY_CLIENT_SECRET="your-client-secret"
 ```
 
-#### Without an SDK by performing HTTP requests
+Optional server configuration:
 
-```Shell
-cd command
-python simswap-http.py +34555555555
+```bash
+export PORT=8000
 ```
 
-### Running as a web server
+See `.env.example` for the expected variables. Do not commit real credentials.
 
-Follow the steps below to run the web server version of the sample app. The server will be listening on the port you configured. Once your server is running, you can run the sample [frontend application](https://github.com/Telefonica/opengateway-samples-simswap-frontend) to interact with it, and therefore with the Open Gateway SIM Swap API, from a human interface.
+## CLI usage
 
-```Shell
-cd server
-python simswap-server.py
+Phone numbers must use E.164 format, including the leading `+`.
+
+Check the default 2400-hour / 100-day window:
+
+```bash
+python command/simswap-sdk.py +5491123456789
 ```
 
-You can also test your server with the following `curl` commands changing the phone number (including country code with the + prefix) and the number of hours as needed:
+Check a custom look-back window, for example 720 hours / 30 days:
 
-```Shell
-curl --location 'http://localhost:8000/check/+34555555555/500'
+```bash
+python command/simswap-sdk.py +5491123456789 720
 ```
 
-```Shell
-curl --location 'http://localhost:8000/retrieve_date/+34555555555'
+Machine-readable output:
+
+```bash
+python command/simswap-sdk.py +5491123456789 720 --json
 ```
+
+Example JSON shape:
+
+```json
+{
+  "phone_number": "+5491123456789",
+  "max_age_hours": 720,
+  "recent_swap": false,
+  "last_swap": "provider-dependent timestamp",
+  "source": "Open Gateway SIM Swap API",
+  "interpretation": "No SIM change was reported inside the requested window."
+}
+```
+
+The CLI now passes the user-supplied `max_age` value to the API. The previous sample always checked 2400 hours even when another value was provided.
+
+## Flask server
+
+Run:
+
+```bash
+python server/simswap-server.py
+```
+
+Health check:
+
+```bash
+curl http://localhost:8000/health
+```
+
+Check for a recent SIM change:
+
+```bash
+curl 'http://localhost:8000/check/+5491123456789/720'
+```
+
+Retrieve the last reported SIM-change date:
+
+```bash
+curl 'http://localhost:8000/retrieve_date/+5491123456789'
+```
+
+## Interpreting results during an incident
+
+If the API reports a change near the time your phone unexpectedly lost mobile service, preserve the output together with:
+
+- the exact date and time the phone lost network service;
+- carrier SMS or email notifications;
+- account recovery notifications;
+- suspicious login timestamps;
+- the carrier incident or complaint number.
+
+Ask the carrier to confirm whether the event was a physical SIM replacement, eSIM issuance, or port-out, and to preserve the associated account records.
+
+## Security
+
+Do not expose this sample server directly to the public Internet without authentication, rate limiting, restricted CORS, logging controls, and appropriate authorization for every queried phone number.
+
+Never publish `OPEN_GATEWAY_CLIENT_SECRET` or commit it to Git.
+
+## Upstream references
+
+- Telefónica Open Gateway SIM Swap sample: https://github.com/Telefonica/opengateway-samples-simswap
+- CAMARA Project: https://camaraproject.org
